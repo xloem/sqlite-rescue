@@ -1,0 +1,224 @@
+
+
+
+
+finding sqlite3 rows
+
+sqlite uses a varint format where if bit 8 (&0x80) is set, another byte follows.
+
+rows consist of header data followed by content. every row has a type header! it contains lengths.
+
+- varint headerlen
+for each element:
+	- varint serial type
+		0 = NULL
+		<4 = integer of that many bytes
+		5,6 = integer of 6, 8 bytes
+		7 = float of 8 bytes
+		8 = elided constant 0
+		9 = elided constant 1
+		[10 = NULL with virtual table]
+		>=12 and even, blob of size (n-12)/2
+		>=13 and odd, text of size (n-13)/2
+the data then procedes packed after the header.
+
+CREATE TABLE ValidPaths (
+    id               integer primary key autoincrement not null,
+    path             text unique not null,
+    hash             text not null,
+    registrationTime integer not null,
+    deriver          text,
+    narSize          integer
+);
+
+so, record:
+varint reclen
+varint id
+varint hdrlen
+	repeated:
+		serial type as above
+repeated:
+	data as serial type
+next record
+
+so if i find myself in a record, i roughly need to walk backward hypothesizing the content.
+if i know the table structure, i can interpret the data i see as that table structure, and compare it with the content.
+if i make a serial type parser that can return failure, then it's not hard.
+
+int parse_sqlite_null(unsigned char ** hdrdata, unsigned char ** data, void ** null = 0)
+{
+	if (*(hdrdata ++) != 0) return 0;
+	if (null) *null = 0;
+	return 1;
+}
+
+int parse_sqlite_int(unsigned char ** hdrdata, unsigned char ** data, uint64_t * integer)
+{
+	uint32_t type;
+	uint32_t int_len;
+	if (!parse_varint(hdrdata, &type)) return 0;
+	if (type == 0 || type == 8 || type >= 10) return 0;
+	if (type < 5) {
+		int_len = type;
+	} else if (type < 7) {
+		int_len = (type - 2) * 2;
+	} else {
+		*integer = type & 1;
+		return 1;
+	}
+	unsigned char * data_tail = *data + int_len;
+	*integer = 0;
+	assert(*(uint16_t*){0x01,0x02} == 0x201); // little endian
+	memcpy(integer, *data, int_len);
+	*data += int_len;
+}
+
+int parse_sqlite_float(unsigned char ** hdrdata, unsigned char ** data, double * floating)
+{
+	if ((*hdrdata) ++ != 7) return 0;
+	*floating = *(double*)*data;
+	*data += 8;
+	return 1;
+}
+
+int parse_sqlite_text(unsigned char ** hdrdata, unsigned char ** data, char ** text, uint32_t * text_len)
+{
+	uint32_t type;
+	if (!parse_varint(hdrdata, &type)) return 0;
+	if (type < 13 || !(type & 1)) return 0;
+	*text_len = (type - 13) / 2;
+	*text = data;
+	*data += text_len;
+	return 1;
+}
+
+int parse_sqlite_blob(unsigned char ** hdrdata, unsigned char ** data, unsigned char ** blob, uint32_t * blob_len)
+{
+	uint32_t type;
+	if (!parse_varint(hdrdata, &type)) return 0;
+	if (type < 12 || (type & 1)) return 0;
+	*blob_len = (type - 12) / 2;
+	*blob = data;
+	*data += blob_len;
+	return 1;
+}
+
+parse_sqlite_record(data) {
+	unsigned char * recptr = data;
+	unsigned char * hdrptr = recptr;
+	unsigned char * hdrdata, dataptr;
+	int hdroffset = 0;
+	uint32_t reclen, id, hdrlen;
+	if (!parse_varint(&hdrptr, &reclen)) return 0;
+	if (!parse_varint(&hdrptr, &id)) return 0;
+	if (!parse_varint(&hdrptr, &hdrlen)) return 0;
+
+	hdrdata = hdrptr;
+	dataptr = hdrptr + hdrlen;
+
+	// id
+	if (!parse_sqlite_null(&hdrdata, &dataptr)) return 0;
+
+	// path
+	char * path; size_t path_len
+	if (!parse_sqlite_text(&hdrdata, &dataptr, &path, &path_len)) return 0;
+
+	// hash
+	char * hash; size_t hash_len
+	if (!parse_sqlite_text(&hdrdata, &dataptr, &hash, &path_len)) return 0;
+	if (hash_len != 71) return 0;
+
+	// registrationTime
+	uint64_t registrationTime;
+	if (!parse_sqlite_int(&hdrdata, &dataptr, &registrationTime)) return 0;
+
+	// deriver
+	char * deriver; size_t deriver_len;
+	if (parse_sqlite_null(&hdrdata, &dataptr, &deriver)) {
+		deriver_len = 0;
+	} else if (!parse_sqlite_text(&hdrdata, &dataptr, &deriver, &deriver_len)) {
+		return 0;
+	}
+
+	// narSize
+	uint64_t narSize;
+	if (parse_sqlite_null(&hdrdata, &dataptr)) {
+		narSize = ~0;
+	} else if (!parse_sqlite_int(&hdrdata, &dataptr, &narSize)) {
+		return 0;
+	}
+
+	return 1;
+}
+
+INSERT INTO ValidPaths VALUES(26,'/gnu/store/if14c349wckyng4zvqz281paqzh9m78r-ncurses-6.2.20210619','sha256:8fe760fc89ab045a53c5a7884bcdd36a0466a4eea7b91a05c64b7ba752625ff6',1,NULL,5980024);
+
+                                                  recln id?
+                                                  147__ 26
+0000d0c0  00 00 00 00 00 00 00 00  00 00 00 00 00 81 13 1a  |................|
+          hdr   path  hash  t  drv sz
+           9 NL 141__ 155__ c1 NL  i3 path                            path,len~=64 . 64*2+13= 141
+0000d0d0  09 00 81 0d 81 1b 09 00  03 2f 67 6e 75 2f 73 74  |........./gnu/st|
+0000d0e0  6f 72 65 2f 69 66 31 34  63 33 34 39 77 63 6b 79  |ore/if14c349wcky|
+0000d0f0  6e 67 34 7a 76 71 7a 32  38 31 70 61 71 7a 68 39  |ng4zvqz281paqzh9|
+0000d100  6d 37 38 72 2d 6e 63 75  72 73 65 73 2d 36 2e 32  |m78r-ncurses-6.2|
+                                                                      hash,len~=71 , 71*2+13= 155
+0000d110  2e 32 30 32 31 30 36 31  39 73 68 61 32 35 36 3a  |.20210619sha256:|
+0000d120  38 66 65 37 36 30 66 63  38 39 61 62 30 34 35 61  |8fe760fc89ab045a|
+0000d130  35 33 63 35 61 37 38 38  34 62 63 64 64 33 36 61  |53c5a7884bcdd36a|
+0000d140  30 34 36 36 61 34 65 65  61 37 62 39 31 61 30 35  |0466a4eea7b91a05|
+0000d150  63 36 34 62 37 62 61 37  35 32 36 32 35 66 66 36  |c64b7ba752625ff6|
+                                                  drv
+                         id hdrlen path  hash  rt    sz
+          size____ 176__ 25  9 NL  199__ 155__ c1 NL i3
+0000d160  5b 3f 78 81 30 19 09 00  81 47 81 1b 09 00 03 2f  |[?x.0....G...../|
+0000d170  67 6e 75 2f 73 74 6f 72  65 2f 78 69 36 67 71 71  |gnu/store/xi6gqq|
+0000d180  35 36 31 6b 76 6d 70 7a  6e 77 37 6e 69 69 61 6a  |561kvmpznw7niiaj|
+0000d190  6e 77 73 6e 63 79 67 69  61 31 2d 73 68 65 70 68  |nwsncygia1-sheph|
+0000d1a0  65 72 64 2d 66 69 6c 65  2d 73 79 73 74 65 6d 2d  |erd-file-system-|
+0000d1b0  2d 73 79 73 2d 66 69 72  6d 77 61 72 65 2d 65 66  |-sys-firmware-ef|
+0000d1c0  69 2d 65 66 69 76 61 72  73 2e 67 6f 73 68 61 32  |i-efivars.gosha2|
+0000d1d0  35 36 3a 30 33 31 34 31  31 38 36 65 61 64 39 32  |56:03141186ead92|
+0000d1e0  64 35 37 66 34 65 64 37  63 65 32 61 38 36 34 37  |d57f4ed7ce2a8647|
+0000d1f0  31 32 66 66 38 63 33 33  64 38 36 30 65 31 33 66  |12ff8c33d860e13f|
+0000d200  30 62 30 62 64 39 64 39  63 33 63 32 38 38 34 62  |0b0bd9d9c3c2884b|
+0000d210  36 33 35 01 16 10 81 30  18 09 00 81 49 81 1b 09  |635....0....I...|
+0000d220  00 02 2f 67 6e 75 2f 73  74 6f 72 65 2f 68 77 34  |../gnu/store/hw4|
+0000d230  72 63 38 6a 31 6e 35 64  63 38 6a 71 6c 63 68 71  |rc8j1n5dc8jqlchq|
+0000d240  37 32 32 77 70 35 6a 39  64 68 31 6b 61 2d 73 68  |722wp5j9dh1ka-sh|
+0000d250  65 70 68 65 72 64 2d 66  69 6c 65 2d 73 79 73 74  |epherd-file-syst|
+0000d260  65 6d 2d 2d 73 79 73 2d  66 69 72 6d 77 61 72 65  |em--sys-firmware|
+0000d270  2d 65 66 69 2d 65 66 69  76 61 72 73 2e 73 63 6d  |-efi-efivars.scm|
+0000d280  73 68 61 32 35 36 3a 61  30 30 39 64 33 35 64 38  |sha256:a009d35d8|
+0000d290  33 32 36 32 35 31 66 61  38 66 32 31 33 35 66 31  |326251fa8f2135f1|
+0000d2a0  63 64 64 39 31 36 33 34  34 65 30 31 63 30 61 35  |cdd916344e01c0a5|
+0000d2b0  37 33 30 30 35 38 30 32  66 30 33 33 63 34 33 66  |73005802f033c43f|
+0000d2c0
+
+CREATE TABLE DerivationOutputs (
+    drv  integer not null,
+    id   text not null, -- symbolic output id, usually "out"
+    path text not null,
+    primary key (drv, id),
+    foreign key (drv) references ValidPaths(id) on delete cascade
+);
+00077e4c  66 39 6a 38 39 63 79 32  61 68 78 6a 7a 64 76 32  |f9j89cy2ahxjzdv2|
+00077e5c  31 6d 66 36 6d 69 72 6d  30 69 64 37 32 38 2d 62  |1mf6mirm0id728-b|
+                                      reclen=63?   
+                                         rowid=150?
+                                               hdrlen=4
+                                                 drv 19=id text of len 3
+                                      63 150__  4 i2    121=path text of len 54
+00077e6c  61 73 68 35 31 2d 30 30  37 3f 81 22 04 02 13 79/ |ash51-007?."...y|
+         /drv
+          931__
+00077e7c  03 a3 6f 75 74 2f 67 6e  75 2f 73 74 6f 72 65 2f  |..out/gnu/store/|
+00077e8c  61 62 71 78 34 35 71 78  63 6c 6e 63 39 32 33 36  |abqx45qxclnc9236|
+00077e9c  7a 78 36 31 6e 39 6e 35  34 76 78 36 71 68 32 67  |zx61n9n54vx6qh2g|
+                                            69 161__  5 i2
+00077eac  2d 62 61 73 68 35 31 2d  30 30 38 45 81 21 05 02  |-bash51-008E.!..|
+          id path /drv
+          19 131__ 930__
+00077ebc  13 81 03 03 a2 6f 75 74  2f 67 6e 75 2f 73 74 6f  |.....out/gnu/sto|
+00077ecc  72 65 2f 39 62 73 6a 39  7a 36 6d 62 69 6e 33 70  |re/9bsj9z6mbin3p|
+00077edc  7a 71 61 35 6d 63 76 6e  6b 35 63 67 7a 78 32 62  |zqa5mcvnk5cgzx2b|
