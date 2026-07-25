@@ -10,4 +10,4 @@ The user must write or generate, and compile, short parsing functions that descr
 
 See the example tool scan-db-guix.c, which recovers Guix store database rows, or sqlite.h for just the interface.
 
-Note, this is simple, basic code. Small improvements, such as adding multithrading, could make it even faster.
+Note, this is simple, basic code. Small improvements, such as adding multithreading, could make it even faster.
