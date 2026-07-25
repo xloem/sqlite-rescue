@@ -11,3 +11,16 @@ The user must write or generate, and compile, short parsing functions that descr
 See the example tool scan-db-guix.c, which recovers Guix store database rows, or sqlite.h for just the interface.
 
 Note, this is simple, basic code. Small improvements, such as adding multithreading, could make it even faster.
+
+## Known Potential Bugs
+
+I made this in a morning so it may not work on things other
+than the guix database.
+
+One concern is there may be no provision for negative numbers.
+The check against 0x80 on line 10 of sqlite.c should possibly
+be removed.
+
+I expect that if it does not work for you, though, there are
+likely just a couple small things that need fixing for it to
+plow through whatever data you have.
