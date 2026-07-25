@@ -2,8 +2,6 @@
 
 #include <endian.h>
 
-#include <assert.h>
-
 int parse_varint(uint8_t const ** data, uint8_t const * tail, uint32_t * value)
 {
 	if (*data >= tail) return 0;
@@ -54,8 +52,6 @@ uint8_t const * parse_sqlite_record(uint8_t const * data, size_t datalen, sqlite
 
 int parse_sqlite_null(struct sqlite_parse_t * parse, void ** null)
 {
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	if (parse->pos.hdrdata >= parse->dataptr) return 0;
 	if (*parse->pos.hdrdata != 0) return 0;
 	++ parse->pos.hdrdata;
@@ -67,8 +63,6 @@ int parse_sqlite_int(struct sqlite_parse_t * parse, uint64_t * integer)
 {
 	uint32_t type;
 	uint8_t int_len;
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	if (!parse_varint(&parse->pos.hdrdata, parse->dataptr, &type)) return 0;
 	if (type == 0 || type == 8 || type >= 10) return 0;
 	if (type < 5) {
@@ -95,8 +89,6 @@ int parse_sqlite_int(struct sqlite_parse_t * parse, uint64_t * integer)
 
 int parse_sqlite_float(struct sqlite_parse_t * parse, double * floating)
 {
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	if (parse->pos.hdrdata >= parse->dataptr) return 0;
 	if (*parse->pos.hdrdata != 7) return 0;
 	if (parse->pos.data + 8 > parse->rectail) return 0;
@@ -109,26 +101,18 @@ int parse_sqlite_float(struct sqlite_parse_t * parse, double * floating)
 int parse_sqlite_text(struct sqlite_parse_t * parse, char const ** text, uint32_t * text_len)
 {
 	uint32_t type;
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	if (!parse_varint(&parse->pos.hdrdata, parse->dataptr, &type)) return 0;
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	if (type < 13 || !(type & 1)) return 0;
 	*text_len = (type - 13) / 2;
 	if ((uint32_t)(parse->rectail - parse->pos.data) < *text_len) return 0;
 	*text = (void*)parse->pos.data;
 	parse->pos.data += *text_len;
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	return 1;
 }
 
 int parse_sqlite_blob(struct sqlite_parse_t * parse, uint8_t const ** blob, uint32_t * blob_len)
 {
 	uint32_t type;
-	assert(parse->pos.hdrdata >= parse->hdrptr);
-	assert(parse->pos.data >= parse->dataptr);
 	if (!parse_varint(&parse->pos.hdrdata, parse->dataptr, &type)) return 0;
 	if (type < 12 || (type & 1)) return 0;
 	*blob_len = (type - 12) / 2;

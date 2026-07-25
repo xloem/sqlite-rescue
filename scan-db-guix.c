@@ -167,12 +167,12 @@ int main(int argc, char const **argv)
 			perror(argv[1]);
 			return 1;
 		}
-#ifdef POSIX_FADV_SEQUENTIAL
-		(void)posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
 	} else {
 		fprintf(stderr, "Reading /var/guix/db/db.sqlite fragments from stdin ...\n");
 	}
+#ifdef POSIX_FADV_SEQUENTIAL
+	(void)posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
 
 	fprintf(stderr, "%s\n%s\n%s\n",
 		CREATE_ValidPaths,
