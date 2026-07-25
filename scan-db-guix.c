@@ -56,8 +56,8 @@ int parse_validpath_record(struct sqlite_parse_t * parse, uint32_t rowid)
 	// rowid used for autoincrement id
 	printf("INSERT INTO ValidPaths VALUES(%" PRIu32 ",'%.*s','%.*s',%" PRIu64,
 			rowid,
-			(size_t)path_len, path,
-			(size_t)hash_len, hash,
+			(int)path_len, path,
+			(int)hash_len, hash,
 			registrationTime);
 	if (deriver) {
 		printf(",'%.*s'", deriver_len, deriver);
