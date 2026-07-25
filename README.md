@@ -15,7 +15,7 @@ Note, this is simple, basic code. Small improvements, such as adding multithread
 ## Known Potential Bugs
 
 I made this in a morning so it may not work on things other
-than the guix database.
+than the Guix database.
 
 One concern is there may be no provision for negative numbers.
 The check against 0x80 on line 10 of sqlite.c should possibly
