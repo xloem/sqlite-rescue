@@ -24,3 +24,9 @@ be removed.
 I expect that if it does not work for you, though, there are
 likely just a couple small things that need fixing for it to
 plow through whatever data you have.
+
+_However_ the SQLite format here was made entirely from the Autoconf SQLite
+variant source that comes with Guix and the Guix DB. So if other SQLite's have
+a different format, it will definitely fail to parse them and need to be
+updated for their source or format by looking at the database hexdump or the
+writing and reading code. 
