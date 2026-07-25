@@ -14,7 +14,7 @@ Note, this is simple, basic code. Small improvements, such as adding multithread
 
 ## Known Potential Bugs
 
-I made this in a morning so it may not work on things other
+I made this in a day so it may not work on things other
 than the Guix database.
 
 One concern is there may be no provision for negative numbers.
